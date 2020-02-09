@@ -28,5 +28,9 @@ int main(int argc, char *argv[]){
         printf("%s is not a valid ELF",argv[1]);
         return -1;
     }
+   
+    if(fd){
+        close(fd);
+    }
     return 0;
 }
