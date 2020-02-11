@@ -16,3 +16,5 @@ bool validType(Elf32_Ehdr *hd);
 Elf64_Shdr* findSectionHead(int fd, Elf64_Ehdr *head, Elf64_Shdr** stbl, int sh_num, char* section_name);
 int getAllSectionHeaders(int fd, Elf64_Ehdr *head, Elf64_Shdr ***shead);
 char* readsection(int fd, Elf64_Shdr* sh);
+int getNeedLibs(int fd, char *needed);
+int getRPath(int fd, char *rpath);

@@ -114,49 +114,146 @@ char* readsection(int fd, Elf64_Shdr* sh){
     return "";
 }
 
+int getRPath(int fd, char *rpath){
+    if(fd <= 0){
+        return -1;
+    }
+
+    Elf32_Ehdr h32;
+    if(read_elf_header32(fd, &h32) == 0){
+        if(validELF(&h32) && validType(&h32)){
+            Elf64_Ehdr h64;
+            if(read_elf_header64(fd, &h64) == 0){
+                Elf64_Shdr **shead = NULL;
+                int shnum = getAllSectionHeaders(fd, &h64, &shead);
+                if(shnum > 0 && shead){
+                    Elf64_Shdr *sdh = findSectionHead(fd, &h64, shead, shnum, ".dynamic");
+                    Elf64_Shdr *sdsh = findSectionHead(fd, &h64, shead, shnum, ".dynstr");
+
+                    char *strTab = readsection(fd, sdsh);
+                    char *content = readsection(fd, sdh);
+
+                    Elf64_Dyn *dyn = (Elf64_Dyn *)content;
+                    Elf64_Dyn *dynRPath = NULL, *dynRunPath = NULL;
+                    for(; dyn->d_tag != DT_NULL; dyn++){
+                        if (dyn->d_tag == DT_RPATH) {
+                            dynRPath = dyn;
+                            /* Only use DT_RPATH if there is no DT_RUNPATH. */
+                            if (!dynRunPath)
+                                sprintf(rpath + strlen(rpath), "%s:", strTab + dyn->d_un.d_val);
+                        }
+                        else{
+                            if(dyn->d_tag == DT_RUNPATH){
+                                dynRunPath = dyn;
+                                sprintf(rpath + strlen(rpath), "%s:", strTab + dyn->d_un.d_val);
+                            }
+                        }
+                    }
+
+                    if(rpath[strlen(rpath) - 1]== ':'){
+                        rpath[strlen(rpath) - 1] = '\0';
+                    }
+
+                    //clean up
+                    if(shead){
+                        for(int i = 0; i<shnum; i++){
+                            if(shead[i]){
+                                free(shead[i]);
+                            }
+                        }
+                        free(shead);
+                        shead = NULL;
+                    }
+
+                    if(strTab){
+                        free(strTab);
+                    }
+                    if(content){
+                        free(content);
+                    }
+
+                    return 0;
+                }
+            }
+        }
+    }
+
+    return -1;
+}
+
+int getNeedLibs(int fd, char *needed){
+    if(fd <= 0){
+        return -1;
+    }
+
+    Elf32_Ehdr h32;
+    if(read_elf_header32(fd, &h32) == 0){
+        if(validELF(&h32) && validType(&h32)){
+            Elf64_Ehdr h64;
+            if(read_elf_header64(fd, &h64) == 0){
+                Elf64_Shdr **shead = NULL;
+                int shnum = getAllSectionHeaders(fd, &h64, &shead);
+                if(shnum > 0 && shead){
+                    Elf64_Shdr *sdh = findSectionHead(fd, &h64, shead, shnum, ".dynamic");
+                    Elf64_Shdr *sdsh = findSectionHead(fd, &h64, shead, shnum, ".dynstr");
+
+                    char *strTab = readsection(fd, sdsh);
+                    char *content = readsection(fd, sdh);
+
+                    Elf64_Dyn *dyn = (Elf64_Dyn *)content;
+                    Elf64_Dyn *dynRPath = NULL, *dynRunPath = NULL;
+                    for(; dyn->d_tag != DT_NULL; dyn++){
+                        if (dyn->d_tag == DT_NEEDED)
+                            sprintf(needed + strlen(needed), "%s:", strTab + dyn->d_un.d_val);
+                    }
+
+                    if(needed[strlen(needed) - 1]== ':'){
+                        needed[strlen(needed) - 1] = '\0';
+                    }
+
+                    //clean up
+                    if(shead){
+                        for(int i = 0; i<shnum; i++){
+                            if(shead[i]){
+                                free(shead[i]);
+                            }
+                        }
+                        free(shead);
+                        shead = NULL;
+                    }
+
+                    if(strTab){
+                        free(strTab);
+                    }
+                    if(content){
+                        free(content);
+                    }
+                    return 0;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 int main(int argc, char *argv[]){
     assert(argc > 1);
 
     int fd = open(argv[1], O_RDONLY);
     assert(fd);
 
-    Elf32_Ehdr h32; //elf header 32bit
-    assert(read_elf_header32(fd, &h32) == 0);
+    char rpath[1024];
+    memset(rpath,'\0',1024);
+    int rret = getRPath(fd, rpath);
+    if(rret == 0){
+        printf("rpath: %s\n", rpath);
+    }
 
-    if(validELF(&h32) && validType(&h32)){
-        Elf64_Ehdr h64;
-        assert(read_elf_header64(fd, &h64) == 0);
-        assert(h64.e_shnum > 0);
-        Elf64_Shdr **shead = NULL;
-        int shnum = getAllSectionHeaders(fd, &h64, &shead);
-        if(shnum > 0 && shead){
-            //get .dynamic section
-            Elf64_Shdr *sdh = findSectionHead(fd, &h64 , shead, shnum, ".dynamic");
-            Elf64_Shdr *sdsh = findSectionHead(fd, &h64, shead, shnum, ".dynstr");
-            char * strTab = readsection(fd, sdsh);
-
-            char *content = NULL;
-            assert(content = readsection(fd, sdh));
-            //convert content to Elf_Dyn structure
-            Elf64_Dyn *dyn = (Elf64_Dyn *)content;
-            Elf64_Dyn * dynRPath = NULL, * dynRunPath = NULL;
-
-            char * rpath = 0;
-            for ( ; dyn->d_tag != DT_NULL; dyn++) {
-                if (dyn->d_tag == DT_RPATH) {
-                    dynRPath = dyn;
-                    /* Only use DT_RPATH if there is no DT_RUNPATH. */
-                    if (!dynRunPath)
-                        printf("%s\n", strTab + dyn->d_un.d_val);
-                }
-                else if (dyn->d_tag == DT_RUNPATH) {
-                    dynRunPath = dyn;
-                    printf("%s\n", strTab + dyn->d_un.d_val);
-                }
-                else if (dyn->d_tag == DT_NEEDED)
-                    printf("%s\n", strTab + dyn->d_un.d_val);
-            }
-        }
+    char needed[1024];
+    memset(needed,'\0',1024);
+    int nret = getNeedLibs(fd, needed);
+    if(nret == 0){
+        printf("libs needed: %s\n", needed);
     }
 
     if(fd){
